@@ -1,0 +1,96 @@
+{
+  "scaler_mean": [
+    5.899973778182487,
+    649.492291
+  ],
+  "scaler_scale": [
+    0.6016593188533438,
+    300.6830436765122
+  ],
+  "centroids_scaled": [
+    [
+      0.9859296452283907,
+      -0.9860447560845292
+    ],
+    [
+      -1.3272207002805092,
+      1.3274956022901019
+    ],
+    [
+      -0.08702640081341609,
+      0.0868407456498034
+    ]
+  ],
+  "centroids_original": [
+    [
+      6.493167536967919,
+      353.00535253923965
+    ],
+    [
+      5.101439075683658,
+      1048.6477091637726
+    ],
+    [
+      5.847613533146829,
+      675.6038307171208
+    ]
+  ],
+  "cluster_order": [
+    0,
+    2,
+    1
+  ],
+  "cluster_map": {
+    "0": "Fresh",
+    "2": "Semi-Spoiled",
+    "1": "Spoiled"
+  },
+  "features": [
+    "ph_actual",
+    "gas_raw_mq135"
+  ],
+  "feature_labels": {
+    "temp_c_dht": "Temperature (\u00b0C)",
+    "ph_actual": "pH Level",
+    "gas_raw_mq135": "Gas MQ-135 (ppm)",
+    "hum_pct_dht": "Humidity (%)"
+  },
+  "pca_components": [
+    [
+      0.7071067811865485,
+      -0.7071067811865467
+    ],
+    [
+      0.7071067811865467,
+      0.7071067811865485
+    ]
+  ],
+  "pca_explained_variance": [
+    0.999723415871826,
+    0.00027658412817395725
+  ],
+  "metrics": {
+    "kmeans": {
+      "silhouette": 0.6033364037267361,
+      "calinski_harabasz": 86010.3140618775,
+      "davies_bouldin": 0.4955881143331505
+    },
+    "agglomerative": {
+      "silhouette": 0.5978579783696844,
+      "calinski_harabasz": 37645.8603689279,
+      "davies_bouldin": 0.49167834355951356
+    },
+    "dbscan": {
+      "silhouette": 0,
+      "n_clusters": 1,
+      "noise": 0
+    }
+  },
+  "class_distribution": {
+    "Fresh": 412203,
+    "Semi-Spoiled": 309013,
+    "Spoiled": 278784
+  },
+  "agreement_with_rules": 0.528828,
+  "total_samples": 1000000
+}
