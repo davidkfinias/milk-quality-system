@@ -558,12 +558,16 @@ elif page == "📉 Degradation Timeline":
         bin_centers = df_tl.groupby('time_bin')['time_hr'].mean()
 
         fig = go.Figure()
+        def hex_to_rgba(hex_color, alpha=0.6):
+            h = hex_color.lstrip('#')
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return f'rgba({r},{g},{b},{alpha})'
         for cls in CLASS_ORDER:
             fig.add_trace(go.Scatter(
                 x=bin_centers.values, y=prop[cls].values,
                 mode='lines', name=cls, stackgroup='one',
                 line=dict(width=0.5, color=COLORS_HEX[cls]),
-                fillcolor=COLORS_HEX[cls].replace(')', ',0.6)').replace('rgb', 'rgba') if 'rgb' in COLORS_HEX[cls] else COLORS_HEX[cls] + '99',
+                fillcolor=hex_to_rgba(COLORS_HEX[cls], 0.6),
             ))
         fig.update_layout(
             title='Stacked Quality Proportion Over Time',
