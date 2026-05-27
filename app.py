@@ -331,8 +331,13 @@ elif page == "📊 Batch Classification":
             if st.button("🚀 Classify All Rows", type="primary"):
                 with st.spinner(f"Classifying {len(df_up):,} samples..."):
                     df_result = classify_batch(scaler, kmeans, df_up)
+                # Persist so the Timeline page can reuse it without re-uploading
+                st.session_state['labeled_data'] = df_result
+                st.success(f"✅ Classified {len(df_result):,} samples! The Degradation Timeline page will now load these results automatically.")
 
-                st.success(f"✅ Classified {len(df_result):,} samples!")
+            # Show results if available in session (freshly classified or from before)
+            if 'labeled_data' in st.session_state:
+                df_result = st.session_state['labeled_data']
 
                 # Summary
                 dist = df_result['Milk_Quality'].value_counts()
@@ -403,20 +408,32 @@ elif page == "📊 Batch Classification":
 
 elif page == "📉 Degradation Timeline":
     st.markdown('<div class="section-header">Milk Degradation Timeline</div>', unsafe_allow_html=True)
-    st.markdown("Upload the full labeled dataset to visualize how the milk transitioned through quality classes over the recording period.")
 
-    uploaded_tl = st.file_uploader("Upload labeled CSV (milk_quality_labeled.csv)", type=['csv'], key='timeline')
+    # Source of data: session (from Batch page) takes priority; upload is optional override
+    df_tl = None
+    has_session = 'labeled_data' in st.session_state
 
-    if uploaded_tl:
-        df_tl = pd.read_csv(uploaded_tl)
+    if has_session:
+        st.success("✅ Using the dataset you classified on the Batch Classification page — no upload needed.")
+        uploaded_tl = None
+        with st.expander("Want to use a different file instead? Upload here"):
+            uploaded_tl = st.file_uploader("Upload a labeled CSV", type=['csv'], key='timeline')
+        if uploaded_tl is not None:
+            df_tl = pd.read_csv(uploaded_tl)
+        else:
+            df_tl = st.session_state['labeled_data'].copy()
+    else:
+        st.markdown("No classified data yet. Either classify a file on the **Batch Classification** page (recommended — then this page loads automatically), or upload a labeled CSV below.")
+        uploaded_tl = st.file_uploader("Upload labeled CSV (milk_quality_labeled.csv)", type=['csv'], key='timeline')
+        if uploaded_tl is not None:
+            df_tl = pd.read_csv(uploaded_tl)
 
+    if df_tl is not None:
         required = ['ts_ms', 'ph_actual', 'gas_raw_mq135', 'Milk_Quality']
         missing = [c for c in required if c not in df_tl.columns]
         if missing:
-            st.error(f"Missing columns: {missing}. Please upload the labeled output from the clustering pipeline.")
+            st.error(f"Missing columns: {missing}. The data needs a timestamp (ts_ms) and Milk_Quality label.")
             st.stop()
-
-        st.success(f"Loaded {len(df_tl):,} samples")
 
         df_tl = df_tl.sort_values('ts_ms').reset_index(drop=True)
         df_tl['time_hr'] = df_tl['ts_ms'] / 3_600_000
@@ -596,10 +613,10 @@ elif page == "📉 Degradation Timeline":
         st.dataframe(pd.DataFrame(phase_data), use_container_width=True, hide_index=True)
 
     else:
-        st.info("👆 Upload the `milk_quality_labeled.csv` file from the pipeline output to see the timeline analysis.")
+        st.info("👆 Classify a file on the **Batch Classification** page first — then come back here and the timeline loads automatically. Or upload a labeled CSV above.")
         st.markdown("""
         This page shows:
-        - **pH & Gas timelines** colored by quality class with threshold reference lines
+        - **pH & Gas timelines** with the 3 quality classes highlighted as colored regions
         - **Temperature & Humidity** environmental context
         - **Stacked area chart** showing how quality composition changed over time
         - **Phase summary** comparing Early/Middle/Late periods of the recording
