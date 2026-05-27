@@ -187,6 +187,7 @@ with st.sidebar:
     page = st.radio("", [
         "🔬 Single Sample Test",
         "📊 Batch Classification",
+        "📉 Degradation Timeline",
         "📈 Model Performance",
         "📋 Reference Thresholds"
     ], label_visibility="collapsed")
@@ -398,6 +399,209 @@ elif page == "📊 Batch Classification":
             st.plotly_chart(fig, use_container_width=True)
 
 
+# ── Page: Degradation Timeline ──────────────────────────────────────────────
+
+elif page == "📉 Degradation Timeline":
+    st.markdown('<div class="section-header">Milk Degradation Timeline</div>', unsafe_allow_html=True)
+    st.markdown("Upload the full labeled dataset to visualize how the milk transitioned through quality classes over the recording period.")
+
+    uploaded_tl = st.file_uploader("Upload labeled CSV (milk_quality_labeled.csv)", type=['csv'], key='timeline')
+
+    if uploaded_tl:
+        df_tl = pd.read_csv(uploaded_tl)
+
+        required = ['ts_ms', 'ph_actual', 'gas_raw_mq135', 'Milk_Quality']
+        missing = [c for c in required if c not in df_tl.columns]
+        if missing:
+            st.error(f"Missing columns: {missing}. Please upload the labeled output from the clustering pipeline.")
+            st.stop()
+
+        st.success(f"Loaded {len(df_tl):,} samples")
+
+        df_tl = df_tl.sort_values('ts_ms').reset_index(drop=True)
+        df_tl['time_hr'] = df_tl['ts_ms'] / 3_600_000
+
+        total_hrs = df_tl['time_hr'].max()
+        st.markdown(f"**Recording duration:** {total_hrs:.1f} hours ({total_hrs/24:.1f} days)")
+
+        # Class breakdown
+        c1, c2, c3 = st.columns(3)
+        for col_st, cls in zip([c1, c2, c3], CLASS_ORDER):
+            count = (df_tl['Milk_Quality'] == cls).sum()
+            pct = count / len(df_tl) * 100
+            with col_st:
+                st.markdown(f"""
+                <div class="metric-card">
+                    <h3>{cls}</h3>
+                    <h1 style="color:{COLORS_HEX[cls]}">{count:,}</h1>
+                    <p style="opacity:0.6; margin:4px 0 0 0;">{pct:.1f}%</p>
+                </div>""", unsafe_allow_html=True)
+
+        st.markdown("---")
+
+        # Smooth data for plotting
+        window = max(1, len(df_tl) // 2000)
+        df_tl['ph_smooth'] = df_tl['ph_actual'].rolling(window, center=True, min_periods=1).mean()
+        df_tl['gas_smooth'] = df_tl['gas_raw_mq135'].rolling(window, center=True, min_periods=1).mean()
+
+        # Sample for Plotly performance
+        sample_n = min(3000, len(df_tl))
+        sample_idx = np.linspace(0, len(df_tl)-1, sample_n, dtype=int)
+        dp = df_tl.iloc[sample_idx].copy()
+
+        # ── Compute per-class value ranges and time spans for region highlighting ──
+        def cls_range(col, c):
+            v = df_tl[df_tl['Milk_Quality'] == c][col]
+            return (np.percentile(v, 2), np.percentile(v, 98)) if len(v) else (None, None)
+        def cls_tspan(c):
+            t = df_tl[df_tl['Milk_Quality'] == c]['time_hr']
+            return (t.min(), t.max()) if len(t) else (None, None)
+
+        # ── Chart 1: pH with highlighted class regions ──
+        st.markdown('<div class="section-header">1. Quality Classification Over Time</div>', unsafe_allow_html=True)
+        st.markdown("The shaded boxes highlight each of the 3 quality classes. The line is colored by the class assigned at that moment — watch the milk transition Fresh → Semi-Spoiled → Spoiled.")
+
+        fig = go.Figure()
+        # Shaded class-region rectangles
+        for cls in CLASS_ORDER:
+            lo, hi = cls_range('ph_actual', cls)
+            t_lo, t_hi = cls_tspan(cls)
+            if lo is not None:
+                fig.add_shape(type="rect", x0=t_lo, x1=t_hi, y0=lo, y1=hi,
+                              fillcolor=COLORS_HEX[cls], opacity=0.13,
+                              line=dict(color=COLORS_HEX[cls], width=2), layer="below")
+                fig.add_annotation(x=(t_lo+t_hi)/2, y=hi, text=f"<b>{cls}</b>",
+                                   showarrow=False, font=dict(color=COLORS_HEX[cls], size=13),
+                                   yshift=10)
+        for cls in CLASS_ORDER:
+            mask = dp['Milk_Quality'] == cls
+            fig.add_trace(go.Scatter(
+                x=dp[mask]['time_hr'], y=dp[mask]['ph_smooth'],
+                mode='markers', name=cls,
+                marker=dict(color=COLORS_HEX[cls], size=4, opacity=0.8),
+                hovertemplate=f'{cls}<br>Time: %{{x:.2f}} hrs<br>pH: %{{y:.3f}}<extra></extra>'
+            ))
+        fig.update_layout(
+            title='pH Level Over Time — Class Regions Highlighted',
+            xaxis_title='Time (hours)', yaxis_title='pH Level',
+            height=450, template='plotly_white', legend_title='Quality'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ── Chart 2: Gas with highlighted class regions ──
+        fig = go.Figure()
+        for cls in CLASS_ORDER:
+            lo, hi = cls_range('gas_raw_mq135', cls)
+            t_lo, t_hi = cls_tspan(cls)
+            if lo is not None:
+                fig.add_shape(type="rect", x0=t_lo, x1=t_hi, y0=lo, y1=hi,
+                              fillcolor=COLORS_HEX[cls], opacity=0.13,
+                              line=dict(color=COLORS_HEX[cls], width=2), layer="below")
+                fig.add_annotation(x=(t_lo+t_hi)/2, y=hi, text=f"<b>{cls}</b>",
+                                   showarrow=False, font=dict(color=COLORS_HEX[cls], size=13),
+                                   yshift=10)
+        for cls in CLASS_ORDER:
+            mask = dp['Milk_Quality'] == cls
+            fig.add_trace(go.Scatter(
+                x=dp[mask]['time_hr'], y=dp[mask]['gas_smooth'],
+                mode='markers', name=cls,
+                marker=dict(color=COLORS_HEX[cls], size=4, opacity=0.8),
+                hovertemplate=f'{cls}<br>Time: %{{x:.2f}} hrs<br>Gas: %{{y:.0f}} ppm<extra></extra>'
+            ))
+        fig.update_layout(
+            title='Gas Sensor (MQ-135) Over Time — Class Regions Highlighted',
+            xaxis_title='Time (hours)', yaxis_title='Gas (ppm)',
+            height=450, template='plotly_white', legend_title='Quality'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ── Chart 3: Temperature & Humidity (context) ──
+        if 'temp_c_dht' in df_tl.columns and 'hum_pct_dht' in df_tl.columns:
+            st.markdown('<div class="section-header">2. Environmental Context (Temperature & Humidity)</div>', unsafe_allow_html=True)
+            st.markdown("These sensors captured ambient conditions — shown here for context.")
+
+            df_tl['temp_smooth'] = df_tl['temp_c_dht'].rolling(window, center=True, min_periods=1).mean()
+            df_tl['hum_smooth'] = df_tl['hum_pct_dht'].rolling(window, center=True, min_periods=1).mean()
+            dp_env = df_tl.iloc[sample_idx].copy()
+
+            fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+                                subplot_titles=('Temperature (°C)', 'Humidity (%)'))
+            for cls in CLASS_ORDER:
+                mask = dp_env['Milk_Quality'] == cls
+                fig.add_trace(go.Scatter(
+                    x=dp_env[mask]['time_hr'], y=dp_env[mask]['temp_smooth'],
+                    mode='markers', name=cls, legendgroup=cls,
+                    marker=dict(color=COLORS_HEX[cls], size=3, opacity=0.6),
+                    showlegend=True
+                ), row=1, col=1)
+                fig.add_trace(go.Scatter(
+                    x=dp_env[mask]['time_hr'], y=dp_env[mask]['hum_smooth'],
+                    mode='markers', name=cls, legendgroup=cls,
+                    marker=dict(color=COLORS_HEX[cls], size=3, opacity=0.6),
+                    showlegend=False
+                ), row=2, col=1)
+            fig.update_layout(height=500, template='plotly_white', legend_title='Quality')
+            fig.update_xaxes(title_text='Time (hours)', row=2, col=1)
+            st.plotly_chart(fig, use_container_width=True)
+
+        # ── Chart 4: Stacked area — class proportion over time ──
+        st.markdown('<div class="section-header">3. Quality Composition Over Time</div>', unsafe_allow_html=True)
+        st.markdown("How the proportion of each class evolved throughout the recording.")
+
+        n_bins = 80
+        df_tl['time_bin'] = pd.cut(df_tl['time_hr'], bins=n_bins, labels=False)
+        prop = df_tl.groupby('time_bin')['Milk_Quality'].value_counts(normalize=True).unstack(fill_value=0)
+        for cls in CLASS_ORDER:
+            if cls not in prop.columns:
+                prop[cls] = 0
+        prop = prop[CLASS_ORDER]
+        bin_centers = df_tl.groupby('time_bin')['time_hr'].mean()
+
+        fig = go.Figure()
+        for cls in CLASS_ORDER:
+            fig.add_trace(go.Scatter(
+                x=bin_centers.values, y=prop[cls].values,
+                mode='lines', name=cls, stackgroup='one',
+                line=dict(width=0.5, color=COLORS_HEX[cls]),
+                fillcolor=COLORS_HEX[cls].replace(')', ',0.6)').replace('rgb', 'rgba') if 'rgb' in COLORS_HEX[cls] else COLORS_HEX[cls] + '99',
+            ))
+        fig.update_layout(
+            title='Stacked Quality Proportion Over Time',
+            xaxis_title='Time (hours)', yaxis_title='Proportion',
+            yaxis=dict(range=[0, 1], tickformat='.0%'),
+            height=400, template='plotly_white', legend_title='Quality'
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ── Phase summary ──
+        st.markdown('<div class="section-header">4. Phase Summary (Early / Middle / Late)</div>', unsafe_allow_html=True)
+
+        df_tl['phase'] = pd.cut(df_tl['time_hr'], bins=3, labels=['Early', 'Middle', 'Late'])
+        phase_data = []
+        for phase in ['Early', 'Middle', 'Late']:
+            subset = df_tl[df_tl['phase'] == phase]
+            phase_data.append({
+                'Phase': phase,
+                'Avg pH': f"{subset['ph_actual'].mean():.3f}",
+                'Avg Gas (ppm)': f"{subset['gas_raw_mq135'].mean():.0f}",
+                'Avg Temp (°C)': f"{subset['temp_c_dht'].mean():.1f}" if 'temp_c_dht' in subset.columns else '—',
+                '% Fresh': f"{(subset['Milk_Quality']=='Fresh').mean()*100:.1f}%",
+                '% Semi-Spoiled': f"{(subset['Milk_Quality']=='Semi-Spoiled').mean()*100:.1f}%",
+                '% Spoiled': f"{(subset['Milk_Quality']=='Spoiled').mean()*100:.1f}%",
+            })
+        st.dataframe(pd.DataFrame(phase_data), use_container_width=True, hide_index=True)
+
+    else:
+        st.info("👆 Upload the `milk_quality_labeled.csv` file from the pipeline output to see the timeline analysis.")
+        st.markdown("""
+        This page shows:
+        - **pH & Gas timelines** colored by quality class with threshold reference lines
+        - **Temperature & Humidity** environmental context
+        - **Stacked area chart** showing how quality composition changed over time
+        - **Phase summary** comparing Early/Middle/Late periods of the recording
+        """)
+
+
 # ── Page: Model Performance ─────────────────────────────────────────────────
 
 elif page == "📈 Model Performance":
@@ -464,7 +668,10 @@ elif page == "📈 Model Performance":
 
         # Show saved plots if available
         st.markdown('<div class="section-header">Visualization Gallery</div>', unsafe_allow_html=True)
-        plot_files = sorted([f for f in os.listdir(OUTPUT_DIR) if f.endswith('.png')])
+        if os.path.isdir(MODEL_DIR):
+            plot_files = sorted([f for f in os.listdir(MODEL_DIR) if f.endswith('.png')])
+        else:
+            plot_files = []
         if plot_files:
             cols_per_row = 2
             for i in range(0, len(plot_files), cols_per_row):
@@ -473,11 +680,11 @@ elif page == "📈 Model Performance":
                     idx = i + j
                     if idx < len(plot_files):
                         with col:
-                            st.image(os.path.join(OUTPUT_DIR, plot_files[idx]),
+                            st.image(os.path.join(MODEL_DIR, plot_files[idx]),
                                      caption=plot_files[idx].replace('.png', '').replace('_', ' ').title(),
                                      use_container_width=True)
         else:
-            st.info("No visualization PNGs found in output directory. Run the pipeline first.")
+            st.info("No visualization PNGs found. Upload the plot images to the `output/` folder in your repo to see them here.")
     else:
         st.warning("Model artifacts not found. Run the clustering pipeline first.")
 
